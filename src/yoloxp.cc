@@ -1,6 +1,7 @@
 #include "yoloxp.h"
 #include <cuda_runtime.h>
 #include <iostream>
+#include <cstring>
 
 static void hwc_to_chw(cv::InputArray src, cv::OutputArray dst)
 {
@@ -74,6 +75,9 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
     mEnginePath = engine_path;
     mBackend    = backend;
 
+    output_h_.reserve(output_dims_reshape[0] * output_dims_reshape[1] * output_dims_reshape[2]);
+
+
     checkCudaErrors(cudaStreamCreateWithFlags(&mStream, cudaStreamNonBlocking));
 
     mImgPushed = 0;
@@ -126,9 +130,10 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
     mBindingArray.push_back(output_buf_2);
 
     src = {mBindingArray[1], mBindingArray[2], mBindingArray[3]};
-    cudaMalloc((void **)&dst[0], sizeof(half) * 3 * 85 * 9261);
-    dst[1] = reinterpret_cast<half *>(dst[0]) + 3 * 85 * 7056;
-    dst[2] = reinterpret_cast<half *>(dst[1]) + 3 * 85 * 1764;
+    
+    // cudaMalloc((void **)&dst[0], sizeof(half) * 3 * 85 * 9261);
+    // dst[1] = reinterpret_cast<half *>(dst[0]) + 3 * 85 * 7056;
+    // dst[2] = reinterpret_cast<half *>(dst[1]) + 3 * 85 * 1764;
 
     // mReformatRunner = new ReformatRunner();
 
@@ -147,21 +152,55 @@ yoloxp::~yoloxp()
 
 std::vector<cv::Mat> yoloxp::preProcess4Validate(std::vector<cv::Mat> &cv_img)
 {
+    const double norm_factor_ = 1.0;
+    const auto batch_size = cv_img.size();
+    const float input_height = static_cast<float>(input_dims[2]);
+    const float input_width = static_cast<float>(input_dims[3]);
+    std::vector<cv::Mat> dst_images;
+    std::vector<float> scales_;
 
+    for (const auto & image : images) {
+        cv::Mat dst_image;
+        const float scale = std::min(input_width / image.cols, input_height / image.rows);
+        scales_.emplace_back(scale);
+        const auto scale_size = cv::Size(image.cols * scale, image.rows * scale);
+        cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_CUBIC);
+        const auto bottom = input_height - dst_image.rows;
+        const auto right = input_width - dst_image.cols;
+        copyMakeBorder(
+        dst_image, dst_image, 0, bottom, 0, right, cv::BORDER_CONSTANT, {114, 114, 114});
+        dst_images.emplace_back(dst_image);
+    }
+
+    const auto chw_images = cv::dnn::blobFromImages(
+        dst_images, norm_factor, cv::Size(), cv::Scalar(), false, false, CV_32F);
+
+    const auto data_length = chw_images.total();
+    input_h_.clear();
+    input_h_.reserve(data_length);
+    const auto flat = chw_images.reshape(1, data_length);
+    input_h_ = chw_images.isContinuous() ? flat : flat.clone();
+
+    this->pushImg(input_h_.data(), 1, true);
 }
 
 int yoloxp::pushImg(void *imgBuffer, int numImg, bool fromCPU)
 {
+    int dim = input_dims[0] * input_dims[1] * input_dims[2] * input_dims[3];
+
     if (mBackend == YoloxpBackend::CUDLA_FP16)
     {
-        // checkCudaErrors(cudaMemcpy(mInputTemp1, imgBuffer, 1 * 3 * 960 * 960 * sizeof(float), cudaMemcpyHostToDevice));
+        std::vector<__half> tmp_fp(dim);
+        convert_float_to_half((float *)imgBuffer, (__half *)tmp_fp.data(), dim);
+
+        checkCudaErrors(cudaMemcpy(mBindingArray.data(), tmp_fp.data(), dim * sizeof(float), cudaMemcpyHostToDevice));
         // convert_float_to_half((float *)mInputTemp1, (__half *)mInputTemp2, 1 * 3 * 960 * 960);
         // std::vector<void *> vec_temp_2{mInputTemp2};
         // mReformatRunner->ReformatImage(vec_temp_2.data(), mBindingArray.data(), mStream);
     }
     if (mBackend == YoloxpBackend::CUDLA_INT8)
     {
-        // checkCudaErrors(cudaMemcpy(mInputTemp1, imgBuffer, 1 * 3 * 960 * 960 * sizeof(float), cudaMemcpyHostToDevice));
+        // checkCudaErrors(cudaMemcpy(mInputTemp1, imgBuffer, dim * sizeof(float), cudaMemcpyHostToDevice));
         // std::vector<void *> vec_temp_1{mInputTemp1};
         // std::vector<void *> vec_temp_2{mInputTemp2};
         // mReformatRunner->ReformatImageV2(vec_temp_1.data(), vec_temp_2.data(), mStream);
@@ -196,15 +235,33 @@ int yoloxp::infer()
     std::cout << "Inference time: " << ms << " ms" << std::endl;
 #endif
 
-    // if (mBackend == YoloxpBackend::CUDLA_FP16)
-    // {
-    //     mReformatRunner->Run(src.data(), dst.data(), mStream);
-    // }
-    // if (mBackend == YoloxpBackend::CUDLA_INT8)
-    // {
-    //     // Use fp16:chw16 output here
-    //     mReformatRunner->Run(src.data(), dst.data(), mStream);
-    // }
+    output_h_.clear();
+
+    if (mBackend == YoloxpBackend::CUDLA_FP16)
+    {
+        int dim_0 = output_dims_0[0] * output_dims_0[1] * output_dims_0[2];
+        std::vector<float> fp_0_float(dim_0);
+        copyHalf2Float(fp_0_float, 1);
+
+        int dim_1 = output_dims_1[0] * output_dims_1[1] * output_dims_1[2];
+        std::vector<float> fp_1_float(dim_1);
+        copyHalf2Float(fp_0_float, 2);
+        
+        int dim_2 = output_dims_2[0] * output_dims_2[1] * output_dims_2[2];
+        std::vector<float> fp_2_float(dim_2);
+        copyHalf2Float(fp_0_float, 3);
+
+        std::memcopy((void *)&output_h_[0], fp_0_float.data(), dim_0 * sizeof(float));
+        std::memcopy((void *)&output_h_[dim_0], fp_1_float.data(), dim_1 * sizeof(float));
+        std::memcopy((void *)&output_h_[dim_0+dim_1], fp_2_float.data(), dim_2 * sizeof(float));
+        
+        // mReformatRunner->Run(src.data(), dst.data(), mStream);
+    }
+    if (mBackend == YoloxpBackend::CUDLA_INT8)
+    {
+        // Use fp16:chw16 output here
+        // mReformatRunner->Run(src.data(), dst.data(), mStream);
+    }
 
     checkCudaErrors(cudaStreamSynchronize(mStream));
     mImgPushed = 0;
@@ -214,4 +271,12 @@ int yoloxp::infer()
 std::vector<std::vector<float>> yoloxp::postProcess4Validation(float confidence_threshold, float nms_threshold)
 {
 
+}
+
+void yoloxp::copyHalf2Float(std::vector<float>& out_float, int binding_idx)
+{
+    int dim_0 = out_float.size();
+    std::vector<__half> fp_0(dim_0);
+    checkCudaErrors(cudaMemcpy(fp_0.data(), (void *)mBindingArray[binding_idx], dim_0 * sizeof(__half), cudaMemcpyDeviceToHost));
+    convert_half_to_float((__half *)fp_0.data(), (float *)out_float.data(), dim_0);
 }

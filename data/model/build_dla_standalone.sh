@@ -23,6 +23,6 @@
 echo "Build YoloXP DLA loadable for fp16"
 mkdir -p data/loadable
 TRTEXEC=/usr/src/tensorrt/bin/trtexec
-${TRTEXEC} --onnx=data/model/modified_yolox-sPlus-T4-960x960-pseudo-finetune.onnx --fp16 --useDLACore=0 --buildDLAStandalone --saveEngine=data/loadable/yoloxp.fp16.fp16chwin.fp16chwout.standalone.bin  --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw
+${TRTEXEC} --onnx=data/model/modified_yolox-sPlus-T4-960x960-pseudo-finetune.onnx --fp16 --useDLACore=0 --buildDLAStandalone --saveEngine=data/loadable/yoloxp.fp16.fp16chwin.fp16chwout.standalone.bin  --inputIOFormats=fp16:dla_linear --outputIOFormats=fp16:dla_linear
 
 

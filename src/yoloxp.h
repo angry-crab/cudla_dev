@@ -5,6 +5,7 @@
 #include <NvInferPlugin.h>
 #include <algorithm>
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -61,6 +62,20 @@ struct Box
     }
 };
 
+static void convert_float_to_half(float * a, __half * b, int size) {
+    for(int i=0; i<size; ++i)
+    {
+        b[i] = __float2half(a[i]);
+    }
+}
+
+static void convert_half_to_float(__half * a, float * b, int size) {
+    for(int i=0; i<size; ++i)
+    {
+        b[i] = __half2float(a[i]);
+    }
+}
+
 using BoxArray = std::vector<Box>;
 
 class yoloxp
@@ -110,10 +125,22 @@ class yoloxp
   private:
     int pushImg(void *imgBuffer, int numImg, bool fromCPU = true);
 
+    void copyHalf2Float(std::vector<float>& out_float, int output_idx);
+
   private:
     int mImgPushed;
     int mW;
     int mH;
+
+    std::vector<int> input_dims{1, 3, 960, 960};
+    std::vector<int> output_dims_0{1, 13, 120, 120};
+    std::vector<int> output_dims_1{1, 13, 60, 60};
+    std::vector<int> output_dims_2{1, 13, 30, 30};
+
+    std::vector<int> output_dims_reshape{1, 18900, 13};
+
+    std::vector<float> input_h_;
+    std::vector<float> output_h_;
 
     cudaStream_t mStream;
     float        ms{0.0f};
@@ -141,7 +168,7 @@ class yoloxp
     // ReformatRunner *    mReformatRunner;
 
     std::vector<void *> src;
-    std::vector<void *> dst{3};
+    // std::vector<void *> dst{3};
 
     // For post-processing
     float *                         mAffineMatrix;
