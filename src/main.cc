@@ -99,10 +99,10 @@ int main(int argc, char **argv)
         printf("Run Yoloxp DLA pipeline for %s\n", image_path.c_str());
         cv::Mat one_img = cv::imread(image_path);
         bgr_imgs.push_back(one_img);
-        std::vector<cv::Mat> nchwMats = yoloxp_infer.preProcess4Validate(bgr_imgs);
+        yoloxp_infer.preProcess4Validate(bgr_imgs);
 
         yoloxp_infer.infer();
-        results = yoloxp_infer.postProcess4Validation(0.25, 0.5f);
+        results = yoloxp_infer.postProcess4Validation();
         printf("Num object detect: %ld\n", results.size());
         for (auto &item : results)
         {

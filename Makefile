@@ -26,7 +26,9 @@ SRCDIR := ./src
 CXX := g++
 NVCC := $(CUDA_PATH)/bin/nvcc
 
-ALL_CCFLAGS += --std=c++14 -Wno-deprecated-declarations -Wall
+USE_DLA_STANDALONE_MODE := 1
+
+ALL_CCFLAGS += --std=c++17 -Wno-deprecated-declarations -Wall
 
 ifeq ($(USE_DLA_STANDALONE_MODE),1)
     ALL_CCFLAGS += -DUSE_DLA_STANDALONE_MODE
@@ -54,7 +56,7 @@ INCLUDES += -I $(CUDA_PATH)/include \
 LIBRARIES += -l cudla -L$(CUDA_PATH)/lib64 \
              -l cuda -l cudart -l nvinfer \
              -L $(OPENCV_LIB_PATH) \
-	         -l opencv_objdetect -l opencv_highgui -l opencv_imgproc -l opencv_core -l opencv_imgcodecs \
+	         -l opencv_objdetect -l opencv_highgui -l opencv_imgproc -l opencv_core -l opencv_imgcodecs -l opencv_dnn \
              -l jsoncpp \
 			 -L /usr/lib/aarch64-linux-gnu/nvidia/ -lnvscibuf \
 			 -L /usr/lib/aarch64-linux-gnu/nvidia/ -lnvscisync
@@ -76,7 +78,10 @@ $(BUILD_DIR)/%.o: $(SRCDIR)/%.cu | $(BUILD_DIR)
 cudla_yoloxp: $(NVCCOBJS) $(CXXOBJS) | $(BUILD_DIR)
 	$(CXX) $(ALL_CCFLAGS) $(INCLUDES) $(ALL_LDFLAGS) -o $(BUILD_DIR)/$@ $+ $(LIBRARIES)
 
-run: cudla_yoloxp
+run_fp16: cudla_yoloxp
+	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.fp16.fp16chwin.fp16chwout.standalone.bin --image ./data/images/image.jpg --backend cudla_fp16
+
+run_int8: cudla_yoloxp
 	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.int8.int8hwc4in.fp16chw16out.standalone.bin --image ./data/images/image.jpg --backend cudla_int8
 
 validate_cudla_fp16: cudla_yoloxp

@@ -12,6 +12,7 @@
 #include <numeric>
 #include <string>
 #include <vector>
+#include <cstring>
 
 #ifdef USE_DLA_STANDALONE_MODE
 #include "cudla_context_standalone.h"
@@ -19,13 +20,14 @@
 #include "cudla_context_hybrid.h"
 #endif
 
-#include "decode_nms.h"
+// #include "decode_nms.h"
 // #include "matx_reformat.h"
 
 // opencv for preprocessing &  postprocessing
 #include <opencv2/core/core.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/dnn/dnn.hpp>
 #include <opencv2/opencv.hpp>
 
 #define EXIT_SUCCESS 0 /* Successful exit status. */
@@ -52,6 +54,7 @@ enum YoloxpBackend
 struct Box
 {
     float left, top, right, bottom, confidence;
+    float x_offset, y_offset, height, width;
     float class_label;
 
     Box() = default;
@@ -62,21 +65,26 @@ struct Box
     }
 };
 
-static void convert_float_to_half(float * a, __half * b, int size) {
-    for(int i=0; i<size; ++i)
-    {
-        b[i] = __float2half(a[i]);
-    }
-}
-
-static void convert_half_to_float(__half * a, float * b, int size) {
-    for(int i=0; i<size; ++i)
-    {
-        b[i] = __half2float(a[i]);
-    }
-}
-
 using BoxArray = std::vector<Box>;
+
+struct Object
+{
+  int32_t x_offset;
+  int32_t y_offset;
+  int32_t height;
+  int32_t width;
+  float score;
+  int32_t type;
+};
+
+using ObjectArray = std::vector<Object>;
+
+struct GridAndStride
+{
+  int grid0;
+  int grid1;
+  int stride;
+};
 
 class yoloxp
 {
@@ -112,7 +120,7 @@ class yoloxp
     //! \param cv_img  input images with BGR-UInt8, the size of the vector must smaller than the max batch size of the
     //! model
     //!
-    std::vector<cv::Mat> preProcess4Validate(std::vector<cv::Mat> &cv_img);
+    void preProcess4Validate(std::vector<cv::Mat> &cv_img);
 
     //!
     //! \brief PostProcess for validation on coco dataset, will decode and nms the batch inference result of yoloxp for
@@ -120,22 +128,47 @@ class yoloxp
     //!
     //! \return return all the nms result of yoloxp
     //!
-    std::vector<std::vector<float>> postProcess4Validation(float confidence_threshold, float nms_threshold);
+    std::vector<std::vector<float>> postProcess4Validation();
 
   private:
     int pushImg(void *imgBuffer, int numImg, bool fromCPU = true);
 
     void copyHalf2Float(std::vector<float>& out_float, int output_idx);
 
+    void decodeOutputs(float * prob, ObjectArray & objects, float scale) const;
+
+    void generateGridsAndStride(const int target_w, const int target_h, const std::vector<int> & strides,
+        std::vector<GridAndStride> & grid_strides) const;
+
+    void generateYoloxProposals(std::vector<GridAndStride> grid_strides, float * feat_blob, float prob_threshold,
+        ObjectArray & objects) const;
+    
+    void qsortDescentInplace(ObjectArray & face_objects, int left, int right) const;
+
+    void nmsSortedBboxes(const ObjectArray & face_objects, std::vector<int> & picked, float nms_threshold) const;
+
+    inline void qsortDescentInplace(ObjectArray & objects) const
+        {
+            if (objects.empty()) {
+                return;
+            }
+            qsortDescentInplace(objects, 0, objects.size() - 1);
+        }
+
   private:
     int mImgPushed;
     int mW;
     int mH;
+    float score_threshold_ = 0.3;
+    float nms_threshold_ = 0.7;
+    int num_class_ = 8;
+
+    std::vector<float> scales_;
 
     std::vector<int> input_dims{1, 3, 960, 960};
-    std::vector<int> output_dims_0{1, 13, 120, 120};
-    std::vector<int> output_dims_1{1, 13, 60, 60};
-    std::vector<int> output_dims_2{1, 13, 30, 30};
+    std::vector<int> output_dims_0{1, 13, 120*120};
+    std::vector<int> output_dims_1{1, 13, 60*60};
+    std::vector<int> output_dims_2{1, 13, 30*30};
 
     std::vector<int> output_dims_reshape{1, 18900, 13};
 

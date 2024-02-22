@@ -112,6 +112,10 @@ class cuDLAContextStandalone
     //!
     int submitDLATask(cudaStream_t streamToRun);
 
+    void *getInputCpuBufferPtr(int32_t index);
+
+    void *getOutputCpuBufferPtr(int32_t index);
+
   private:
     void readDLALoadable(const char *loadableFilePath);
     void initialize();

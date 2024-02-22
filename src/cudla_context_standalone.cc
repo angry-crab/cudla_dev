@@ -514,3 +514,40 @@ cuDLAContextStandalone::~cuDLAContextStandalone()
     free(m_LoadableData);
     m_LoadableData = nullptr;
 }
+
+void *cuDLAContextStandalone::getInputCpuBufferPtr(int32_t index)
+{
+    if(index >= m_InputsBufContext.size())
+    {
+        return nullptr;
+    }
+    void *bufObjBuffer;
+    NvSciError sciError = NvSciError_Success;
+
+    sciError = NvSciBufObjGetCpuPtr(m_InputsBufContext[index].buf_obj, &bufObjBuffer);
+    printf("scierr ? %d\n", sciError);
+    if (sciError != NvSciError_Success)
+    {
+        return nullptr;
+    }
+
+    return bufObjBuffer;
+}
+
+void *cuDLAContextStandalone::getOutputCpuBufferPtr(int32_t index)
+{
+    if(index >= m_OutputsBufContext.size())
+    {
+        return nullptr;
+    }
+    void *bufObjBuffer;
+    NvSciError sciError = NvSciError_Success;
+
+    sciError = NvSciBufObjGetCpuPtr(m_OutputsBufContext[index].buf_obj, &bufObjBuffer);
+    if (sciError != NvSciError_Success)
+    {
+        return nullptr;
+    }
+
+    return bufObjBuffer;
+}
