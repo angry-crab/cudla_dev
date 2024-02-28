@@ -15,7 +15,7 @@ static bool concat(std::vector<float>& A, std::vector<float>& B, std::vector<flo
             return false;
         }
         std::memcpy((void*)&output[i], (void*)&A[pa], da*sizeof(float));
-        std::memcpy((void*)&output[i+da], (void*)&B[pa], db*sizeof(float));
+        std::memcpy((void*)&output[i+da], (void*)&B[pb], db*sizeof(float));
         std::memcpy((void*)&output[i+da+db], (void*)&C[pc], dc*sizeof(float));
     }
 

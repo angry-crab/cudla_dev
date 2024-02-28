@@ -30,6 +30,8 @@
 #include <opencv2/dnn/dnn.hpp>
 #include <opencv2/opencv.hpp>
 
+#include "print_kernel.h"
+
 #define EXIT_SUCCESS 0 /* Successful exit status. */
 #define EXIT_FAILURE 1 /* Failing exit status.    */
 
@@ -166,11 +168,16 @@ class yoloxp
     std::vector<float> scales_;
 
     std::vector<int> input_dims{1, 3, 960, 960};
-    std::vector<int> output_dims_0{1, 13, 120*120};
-    std::vector<int> output_dims_1{1, 13, 60*60};
-    std::vector<int> output_dims_2{1, 13, 30*30};
+    std::vector<int> output_dims_0{1, 13, 120, 120};
+    std::vector<int> output_dims_1{1, 13, 60, 60};
+    std::vector<int> output_dims_2{1, 13, 30, 30};
 
     std::vector<int> output_dims_reshape{1, 18900, 13};
+
+    // std::vector<int> input_dims{1, 1, 32, 32};
+    // std::vector<int> output_dims_0{1, 1, 5, 5};
+    // std::vector<int> output_dims_1{1, 3, 3, 3};
+    // std::vector<int> output_dims_2{1, 2, 4, 4};
 
     std::vector<float> input_h_;
     std::vector<float> output_h_;

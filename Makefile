@@ -28,7 +28,7 @@ NVCC := $(CUDA_PATH)/bin/nvcc
 
 USE_DLA_STANDALONE_MODE := 1
 
-ALL_CCFLAGS += --std=c++17 -Wno-deprecated-declarations -Wall
+ALL_CCFLAGS += --std=c++17 -Wno-deprecated-declarations -Wall -fopenmp
 
 ifeq ($(USE_DLA_STANDALONE_MODE),1)
     ALL_CCFLAGS += -DUSE_DLA_STANDALONE_MODE
@@ -56,6 +56,7 @@ INCLUDES += -I $(CUDA_PATH)/include \
 LIBRARIES += -l cudla -L$(CUDA_PATH)/lib64 \
              -l cuda -l cudart -l nvinfer \
              -L $(OPENCV_LIB_PATH) \
+			 -l pthread \
 	         -l opencv_objdetect -l opencv_highgui -l opencv_imgproc -l opencv_core -l opencv_imgcodecs -l opencv_dnn \
              -l jsoncpp \
 			 -L /usr/lib/aarch64-linux-gnu/nvidia/ -lnvscibuf \

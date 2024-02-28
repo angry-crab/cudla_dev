@@ -97,21 +97,36 @@ int main(int argc, char **argv)
     if (!image_path.empty())
     {
         printf("Run Yoloxp DLA pipeline for %s\n", image_path.c_str());
-        cv::Mat one_img = cv::imread(image_path);
-        bgr_imgs.push_back(one_img);
+        cv::Mat image = cv::imread(image_path);
+        bgr_imgs.push_back(image);
         yoloxp_infer.preProcess4Validate(bgr_imgs);
 
         yoloxp_infer.infer();
         results = yoloxp_infer.postProcess4Validation();
         printf("Num object detect: %ld\n", results.size());
+
+        // cv::Mat dst_image;
+        // const float input_height = 960.0;
+        // const float input_width = 960.0;
+        // const float scale = std::min(input_width / image.cols, input_height / image.rows);
+
+        // const auto scale_size = cv::Size(image.cols * scale, image.rows * scale);
+        // cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_CUBIC);
+        // const auto bottom = input_height - dst_image.rows;
+        // const auto right = input_width - dst_image.cols;
+        // copyMakeBorder(
+        // dst_image, dst_image, 0, bottom, 0, right, cv::BORDER_CONSTANT, {114, 114, 114});
+
+
         for (auto &item : results)
         {
+            printf("score: %lf,  left: %lf , top: %lf , right: %lf , bottom: %lf\n", item[5], item[0], item[1], item[2], item[3]);
             // left, top, right, bottom, label, confident
-            cv::rectangle(one_img, cv::Point(item[0], item[1]), cv::Point(item[2], item[3]), cv::Scalar(0, 255, 0), 2,
+            cv::rectangle(image, cv::Point(item[0], item[1]), cv::Point(item[2], item[3]), cv::Scalar(0, 255, 0), 2,
                           16);
         }
         printf("detect result has been write to result.jpg\n");
-        cv::imwrite("result.jpg", one_img);
+        cv::imwrite("result.jpg", image);
     }
 
     return 0;

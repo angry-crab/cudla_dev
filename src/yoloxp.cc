@@ -15,30 +15,6 @@
 //     cv::hconcat(channels, dst);
 // }
 
-struct HalfVec
-{
-    HalfVec(std::size_t size) : size_(size)
-    {
-        if(data == nullptr)
-        {
-            data = malloc(size_ * sizeof(__half));
-        }
-    }
-
-    ~HalfVec()
-    {
-        free(data);
-    }
-
-    __half *get()
-    {
-        return (__half *)data;
-    }
-
-    void *data;
-    std::size_t size_;
-};
-
 static void convert_float_to_half(float * a, __half * b, int size) {
     for(int i=0; i<size; ++i)
     {
@@ -58,8 +34,12 @@ static bool concat(std::vector<float>& A, std::vector<float>& B, std::vector<flo
                     std::vector<int>& dim_A, std::vector<int>& dim_B, std::vector<int>& dim_C, 
                     std::vector<float>& output)
 {
+    assert(dim_A.size() == 4);
+    assert(dim_B.size() == 4);
+    assert(dim_C.size() == 4);
     std::size_t pa = 0, pb = 0, pc = 0;
-    std::size_t da = dim_A.back(), db = dim_B.back(), dc = dim_C.back();
+    std::size_t da = dim_A[3]*dim_A[2], db = dim_B[3]*dim_B[2], dc = dim_C[3]*dim_C[2];
+    int step = 0;
     for(std::size_t i=0; i<output.size(); i+= da+db+dc, pa+=da, pb+=db, pc+=dc)
     {
         if(i+da >= output.size() || i+da+db >= output.size() || pa >= A.size() || pb >= B.size() || pc >= C.size())
@@ -67,11 +47,46 @@ static bool concat(std::vector<float>& A, std::vector<float>& B, std::vector<flo
             return false;
         }
         std::memcpy((void*)&output[i], (void*)&A[pa], da*sizeof(float));
-        std::memcpy((void*)&output[i+da], (void*)&B[pa], db*sizeof(float));
+        std::memcpy((void*)&output[i+da], (void*)&B[pb], db*sizeof(float));
         std::memcpy((void*)&output[i+da+db], (void*)&C[pc], dc*sizeof(float));
+        step++;
     }
 
+    // std::cout << "concat step : " << step << std::endl;
+
     return true;
+}
+
+static void transpose2d(std::vector<float>& input, std::vector<float>& output, std::vector<int>& dim)
+{
+    assert(dim.size() == 2);
+    int la = dim[0], lb = dim[1];
+    for(int i=0; i<dim[0]; ++i)
+    {
+        for(int j=0; j<dim[1]; ++j)
+        {
+            int idx_from = i*lb + j;
+            int idx_to = j*la + i;
+            output[idx_to] = input[idx_from];
+        }
+    }
+}
+
+std::size_t roundup(std::size_t n)
+{
+    std::size_t res = ((n+32)/32) * 32;
+    return res;
+}
+
+static void reformat(std::vector<float>& input, std::vector<float>& output, std::vector<int>& dim_i)
+{
+    std::size_t step_i = roundup(dim_i.back());
+    std::size_t step_o = static_cast<std::size_t>(dim_i.back());
+    std::cout << "step_i : " << step_i << std::endl;
+    for(std::size_t pi=0, po=0; pi<input.size(); pi+=step_i, po+=step_o)
+    {
+        std::memcpy((void*)&output[po], (void*)&input[pi], dim_i.back()*sizeof(float));
+    }
 }
 
 static float intersectionArea(const Object & a, const Object & b)
@@ -82,7 +97,22 @@ static float intersectionArea(const Object & a, const Object & b)
     return inter.area();
 }
 
-float limit(float a, float low, float high) { return a < low ? low : (a > high ? high : a); }
+static bool pad(__half *src, __half *dst, std::size_t total , std::size_t pad_size)
+{
+    if(src == nullptr || dst == nullptr)
+    {
+       return false;
+    }
+    for(std::size_t i=0; i<total; ++i)
+    {
+        if(i >= total)
+        {
+            return false;
+        }
+        dst[i*pad_size] = src[i];
+    }
+    return true;
+}
 
 // static BoxArray cpu_nms(BoxArray &boxes, float threshold)
 // {
@@ -125,7 +155,7 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
     mEnginePath = engine_path;
     mBackend    = backend;
 
-    output_h_ = std::vector<float>(output_dims_reshape[0] * output_dims_reshape[1] * output_dims_reshape[2]);
+    output_h_ = std::vector<float>(output_dims_reshape[0]*output_dims_reshape[1]*output_dims_reshape[2]);
 
 
     checkCudaErrors(cudaStreamCreateWithFlags(&mStream, cudaStreamNonBlocking));
@@ -225,6 +255,7 @@ void yoloxp::preProcess4Validate(std::vector<cv::Mat> &cv_img)
         copyMakeBorder(
         dst_image, dst_image, 0, bottom, 0, right, cv::BORDER_CONSTANT, {114, 114, 114});
         dst_images.emplace_back(dst_image);
+        cv::imwrite("tmp_img.jpg", dst_image);
     }
 
     const auto chw_images = cv::dnn::blobFromImages(
@@ -246,35 +277,18 @@ int yoloxp::pushImg(void *imgBuffer, int numImg, bool fromCPU)
 
     if (mBackend == YoloxpBackend::CUDLA_FP16)
     {
-        // std::vector<__half> tmp_fp(dim);
-        HalfVec tmp_fp(dim);
-        convert_float_to_half((float *)imgBuffer, tmp_fp.get(), dim);
+        std::vector<__half> tmp_fp(dim);
+        convert_float_to_half((float *)imgBuffer, tmp_fp.data(), dim);
+        // std::vector<float> input(dim, 1.0);
+        // convert_float_to_half((float *)input.data(), tmp_fp.data(), dim);
 
         float *a = reinterpret_cast<float *>(imgBuffer);
 
-        std::cout << "img buf : " << a[0] << " " << a[1] << " " << a[2] << std::endl;
-
-        printf("half buf : %f %f %f\n", __half2float(tmp_fp.get()[0]), __half2float(tmp_fp.get()[1]), __half2float(tmp_fp.get()[dim-1]));
-
         std::cout << "Half size : "  << dim * sizeof(__half) << std::endl;
+        // std::cout << "Half size(each) : "  << sizeof(__half) << std::endl;
         // std::cout << "float size : "  << dim * sizeof(float) << std::endl;
 
-        if(mCuDLACtx->getInputCudaBufferPtr(0) != mBindingArray.data())
-        {
-            std::cout << "dlactx : " << mCuDLACtx->getInputCudaBufferPtr(0) << std::endl;
-            std::cout << "mBinding : " << mBindingArray.data() << std::endl;
-        }
-
-        checkCudaErrors(cudaMemcpy(mCuDLACtx->getInputCudaBufferPtr(0), (void *)tmp_fp.get(), dim * sizeof(__half), cudaMemcpyHostToDevice));
-
-        // void *input_buffer = mCuDLACtx->getInputCpuBufferPtr(0);
-
-        // if(input_buffer == nullptr)
-        // {
-        //     std::cout << "null ptr?? " << std::endl;
-        // }
-
-        // std::memcpy(input_buffer, tmp_fp.data(), dim*sizeof(__half));
+        checkCudaErrors(cudaMemcpy(mCuDLACtx->getInputCudaBufferPtr(0), (void *)tmp_fp.data(), dim * sizeof(__half), cudaMemcpyHostToDevice));
 
         // convert_float_to_half((float *)mInputTemp1, (__half *)mInputTemp2, 1 * 3 * 960 * 960);
         // std::vector<void *> vec_temp_2{mInputTemp2};
@@ -317,44 +331,46 @@ int yoloxp::infer()
     std::cout << "Inference time: " << ms << " ms" << std::endl;
 #endif
 
-    // output_h_.clear();
-
     if (mBackend == YoloxpBackend::CUDLA_FP16)
     {
-        int dim_0 = output_dims_0[0] * output_dims_0[1] * output_dims_0[2];
-        std::vector<float> fp_0_float(dim_0);
+        int dim3_0 = output_dims_0[0] * output_dims_0[1] * output_dims_0[2];
+        int r_0 = roundup(output_dims_0[3]);
+        std::vector<float> fp_0_float(dim3_0 * r_0);
         copyHalf2Float(fp_0_float, 0);
+        std::vector<float> fp_0(dim3_0 * output_dims_0[3], 0);
+        reformat(fp_0_float, fp_0, output_dims_0);
 
-        int dim_1 = output_dims_1[0] * output_dims_1[1] * output_dims_1[2];
-        std::vector<float> fp_1_float(dim_1);
+        // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(0), 25, dim_0, mStream);
+        // checkCudaErrors(cudaStreamSynchronize(mStream));
+
+        int dim3_1 = output_dims_1[0] * output_dims_1[1] * output_dims_1[2];
+        int r_1 = roundup(output_dims_1[3]);
+        std::vector<float> fp_1_float(dim3_1 * r_1);
         copyHalf2Float(fp_1_float, 1);
-        
-        int dim_2 = output_dims_2[0] * output_dims_2[1] * output_dims_2[2];
-        std::vector<float> fp_2_float(dim_2);
-        copyHalf2Float(fp_2_float, 2);
+        std::vector<float> fp_1(dim3_1 * output_dims_1[3], 0);
+        reformat(fp_1_float, fp_1, output_dims_1);
 
-        if(concat(fp_0_float, fp_1_float, fp_2_float, output_dims_0, output_dims_1, output_dims_2, output_h_))
+        // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(1), 20, dim_0, mStream);
+        // checkCudaErrors(cudaStreamSynchronize(mStream));
+        
+        int dim3_2 = output_dims_2[0] * output_dims_2[1] * output_dims_2[2];
+        int r_2 = roundup(output_dims_2[3]);
+        std::vector<float> fp_2_float(dim3_2 * r_2);
+        copyHalf2Float(fp_2_float, 2);
+        std::vector<float> fp_2(dim3_2 * output_dims_2[3], 0);
+        reformat(fp_2_float, fp_2, output_dims_2);
+
+        // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(2), 20, dim_0, mStream);
+        // checkCudaErrors(cudaStreamSynchronize(mStream));
+
+        std::vector<float> output_tmp(output_h_.size());
+        if(concat(fp_0, fp_1, fp_2, output_dims_0, output_dims_1, output_dims_2, output_tmp))
         {
             std::cout << "concat ok" << std::endl;
         }
 
-        bool empty = true;
-        for(int i=0; i<output_h_.size(); ++i)
-        {
-            if(output_h_[i] != 0.0)
-            {
-                empty = false;
-            }
-        }
-
-        if(empty)
-        {
-            std::cout << "empty output" << std::endl;
-        }
-
-        // std::memcopy((void *)&output_h_[0], fp_0_float.data(), dim_0 * sizeof(float));
-        // std::memcopy((void *)&output_h_[dim_0], fp_1_float.data(), dim_1 * sizeof(float));
-        // std::memcopy((void *)&output_h_[dim_0+dim_1], fp_2_float.data(), dim_2 * sizeof(float));
+        std::vector<int> dim_reshape{output_dims_reshape[2], output_dims_reshape[1]}; // (13, 18900)
+        transpose2d(output_tmp, output_h_, dim_reshape);
         
         // mReformatRunner->Run(src.data(), dst.data(), mStream);
     }
@@ -381,7 +397,7 @@ std::vector<std::vector<float>> yoloxp::postProcess4Validation()
         const auto top = object.y_offset;
         const auto right = std::clamp(left + object.width, 0, input_dims[2]);
         const auto bottom = std::clamp(top + object.height, 0, input_dims[3]);
-        res.push_back(std::vector<float>{left, top, right, bottom, object.score, object.type});
+        res.push_back(std::vector<float>{left, top, right, bottom, object.type, object.score});
     }
     return res;
 }
@@ -390,6 +406,7 @@ void yoloxp::copyHalf2Float(std::vector<float>& out_float, int binding_idx)
 {
     int dim_0 = out_float.size();
     std::vector<__half> fp_0(dim_0);
+    checkCudaErrors(cudaDeviceSynchronize());
     checkCudaErrors(cudaMemcpy(fp_0.data(), mCuDLACtx->getOutputCudaBufferPtr(binding_idx), dim_0 * sizeof(__half), cudaMemcpyDeviceToHost));
     convert_half_to_float((__half *)fp_0.data(), (float *)out_float.data(), dim_0);
 }
@@ -409,6 +426,8 @@ void yoloxp::decodeOutputs(
     generateYoloxProposals(grid_strides, prob, score_threshold_, proposals);
 
     qsortDescentInplace(proposals);
+
+    std::cout << "proposals size " << proposals.size()<< std::endl;
 
     std::vector<int> picked;
     // cspell: ignore Bboxes
@@ -480,7 +499,6 @@ void yoloxp::generateYoloxProposals(
     // (i.e., `decode_in_inference` should be False)
     float x_center = (feat_blob[basic_pos + 0] + grid0) * stride;
     float y_center = (feat_blob[basic_pos + 1] + grid1) * stride;
-
     // exp is complex for embedded processors
     // float w = exp(feat_blob[basic_pos + 2]) * stride;
     // float h = exp(feat_blob[basic_pos + 3]) * stride;
