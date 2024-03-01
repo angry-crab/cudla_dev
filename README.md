@@ -27,7 +27,7 @@ Docker image (nvcr.io/nvidia/l4t-jetpack:r36.2.0)
 
 ONNX file is modified from `yolox-sPlus-T4-960x960-pseudo-finetune.onnx` by removing Reshape and following layers.
 
-![image](figures/Screenshot.png.png "Remove")
+![image](figures/Screenshot.png "Remove")
 
 
 # Instructions
