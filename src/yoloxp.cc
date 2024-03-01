@@ -247,7 +247,7 @@ void yoloxp::preProcess4Validate(std::vector<cv::Mat> &cv_img)
 
         scales_.emplace_back(scale);
         const auto scale_size = cv::Size(image.cols * scale, image.rows * scale);
-        cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_CUBIC);
+        cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_BILINEAR);
         const auto bottom = input_height - dst_image.rows;
         const auto right = input_width - dst_image.cols;
         copyMakeBorder(

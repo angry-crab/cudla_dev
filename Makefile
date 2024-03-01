@@ -40,7 +40,7 @@ endif
 ifeq ($(DEBUG),1)
     ALL_CCFLAGS += -g
 else
-    ALL_CCFLAGS += -O2
+    ALL_CCFLAGS += -O3
 endif
 
 NVCC_FLAGS := -gencode arch=compute_87,code=sm_87
