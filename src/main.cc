@@ -31,6 +31,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 #include "yoloxp.h"
 
@@ -61,6 +62,54 @@ class InputParser
   private:
     std::vector<std::string> tokens;
 };
+
+template <typename ... Args>
+std::string format(const std::string& fmt, Args ... args )
+{
+  size_t len = std::snprintf( nullptr, 0, fmt.c_str(), args ... );
+  std::vector<char> buf(len + 1);
+  std::snprintf(&buf[0], len + 1, fmt.c_str(), args ... );
+  return std::string(&buf[0], &buf[0] + len);
+}
+
+std::string getFilename(std::string& file_path)
+{
+    int pos_dot = file_path.find_last_of(".");
+    int pos_slash = file_path.find_last_of("/");
+    std::string name = file_path.substr(pos_slash+1, pos_dot-pos_slash-1);
+    return name;
+}
+
+void saveBoxPred(std::vector<std::vector<float>>& boxes, std::string path, std::string target_path)
+{
+    std::vector<std::string> map2class{"UNKNOWN", "CAR", "TRUCK", "BUS", "BICYCLE", "MOTORBIKE", "PEDESTRIAN", "ANIMAL"};
+    std::string file_path = path;
+    // std::cout << "get file: " << filename << std::endl;
+    std::string body = getFilename(file_path);
+    std::string out = target_path + "/" + body + ".txt";
+    // std::cout << "save to: " << out << std::endl;
+    std::ofstream ofs;
+    ofs.open(out, std::ios::out);
+    // ofs.setf(std::ios::fixed, std::ios::floatfield);
+    // ofs.precision(5);
+    if (ofs.is_open()) {
+        for (const auto box : boxes) {
+        //   ofs << box[4] << " "; // label
+        //   ofs << box[5] << " "; // score
+        //   ofs << box[0] << " "; // left
+        //   ofs << box[1] << " "; // top
+        //   ofs << box[2] << " "; // right
+        //   ofs << box[3] << " "; // bottom
+        std::string text = format("%s %f %d %d %d %d", map2class[box[4]].c_str(), box[5], (int)box[0], (int)box[1], (int)box[2], (int)box[3]);
+        ofs << text << "\n";
+        }
+    }
+    else {
+    std::cerr << "Output file cannot be opened!" << std::endl;
+    }
+    ofs.close();
+    return;
+}
 
 int main(int argc, char **argv)
 {
@@ -96,37 +145,48 @@ int main(int argc, char **argv)
 
     if (!image_path.empty())
     {
-        printf("Run Yoloxp DLA pipeline for %s\n", image_path.c_str());
-        cv::Mat image = cv::imread(image_path);
-        bgr_imgs.push_back(image);
-        yoloxp_infer.preProcess4Validate(bgr_imgs);
-
-        yoloxp_infer.infer();
-        results = yoloxp_infer.postProcess4Validation();
-        printf("Num object detect: %ld\n", results.size());
-
-        // cv::Mat dst_image;
-        // const float input_height = 960.0;
-        // const float input_width = 960.0;
-        // const float scale = std::min(input_width / image.cols, input_height / image.rows);
-
-        // const auto scale_size = cv::Size(image.cols * scale, image.rows * scale);
-        // cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_CUBIC);
-        // const auto bottom = input_height - dst_image.rows;
-        // const auto right = input_width - dst_image.cols;
-        // copyMakeBorder(
-        // dst_image, dst_image, 0, bottom, 0, right, cv::BORDER_CONSTANT, {114, 114, 114});
-
-
-        for (auto &item : results)
+        std::string target_path("/home/autoware/develop/cudla_dev/data/evaluation");
+        std::filesystem::create_directory(target_path);
+        for (const auto & entry : std::filesystem::directory_iterator(image_path))
         {
-            printf("score: %lf,  left: %lf , top: %lf , right: %lf , bottom: %lf\n", item[5], item[0], item[1], item[2], item[3]);
-            // left, top, right, bottom, label, confident
-            cv::rectangle(image, cv::Point(item[0], item[1]), cv::Point(item[2], item[3]), cv::Scalar(0, 255, 0), 2,
-                          16);
+            std::string file = entry.path().string();
+            printf("Run Yoloxp DLA pipeline for %s\n", file.c_str());
+            cv::Mat image = cv::imread(file);
+            bgr_imgs.push_back(image);
+            yoloxp_infer.preProcess4Validate(bgr_imgs);
+
+            yoloxp_infer.infer();
+            results = yoloxp_infer.postProcess4Validation();
+            printf("Num object detect: %ld\n", results.size());
+
+            // cv::Mat dst_image;
+            // const float input_height = 960.0;
+            // const float input_width = 960.0;
+            // const float scale = std::min(input_width / image.cols, input_height / image.rows);
+
+            // const auto scale_size = cv::Size(image.cols * scale, image.rows * scale);
+            // cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_CUBIC);
+            // const auto bottom = input_height - dst_image.rows;
+            // const auto right = input_width - dst_image.cols;
+            // copyMakeBorder(
+            // dst_image, dst_image, 0, bottom, 0, right, cv::BORDER_CONSTANT, {114, 114, 114});
+
+
+            for (auto &item : results)
+            {
+                // printf("score: %lf,  left: %lf , top: %lf , right: %lf , bottom: %lf\n", item[5], item[0], item[1], item[2], item[3]);
+                // left, top, right, bottom, label, confident
+                cv::rectangle(image, cv::Point(item[0], item[1]), cv::Point(item[2], item[3]), cv::Scalar(0, 255, 0), 2,
+                            16);
+            }
+            printf("detect result has been write to result.jpg\n");
+            std::string filename = getFilename(file);
+            cv::imwrite("/home/autoware/develop/cudla_dev/data/results/" + filename + ".jpg", image);
+
+            saveBoxPred(results, file, target_path);
+            bgr_imgs.clear();
+            results.clear();
         }
-        printf("detect result has been write to result.jpg\n");
-        cv::imwrite("result.jpg", image);
     }
 
     return 0;

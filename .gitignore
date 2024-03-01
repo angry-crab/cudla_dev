@@ -2,6 +2,7 @@ data/loadable
 build
 .vscode
 data/model/data
-result.jpg
 data/img
-tmp_img.jpg
+data/evaluation_dataset_v1
+data/results
+data/evaluation

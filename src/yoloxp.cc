@@ -155,9 +155,6 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
     mEnginePath = engine_path;
     mBackend    = backend;
 
-    output_h_ = std::vector<float>(output_dims_reshape[0]*output_dims_reshape[1]*output_dims_reshape[2]);
-
-
     checkCudaErrors(cudaStreamCreateWithFlags(&mStream, cudaStreamNonBlocking));
 
     mImgPushed = 0;
@@ -176,16 +173,16 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
 #else
         mCuDLACtx = new cuDLAContextHybrid(engine_path.c_str());
 #endif
-        checkCudaErrors(cudaMalloc(&mInputTemp1, 1 * 3 * 960 * 960 * sizeof(__half)));
+        // checkCudaErrors(cudaMalloc(&mInputTemp1, 1 * 3 * 960 * 960 * sizeof(__half)));
         if (mBackend == YoloxpBackend::CUDLA_FP16)
         {
             // Same size as cuDLA input
-            checkCudaErrors(cudaMalloc(&mInputTemp2, mCuDLACtx->getInputTensorSizeWithIndex(0)));
+            // checkCudaErrors(cudaMalloc(&mInputTemp2, mCuDLACtx->getInputTensorSizeWithIndex(0)));
         }
         if (mBackend == YoloxpBackend::CUDLA_INT8)
         {
             // For int8, we need to do reformat on FP32, then cast to INT8, so we need 4x space.
-            checkCudaErrors(cudaMalloc(&mInputTemp2, 4 * mCuDLACtx->getInputTensorSizeWithIndex(0)));
+            // checkCudaErrors(cudaMalloc(&mInputTemp2, 4 * mCuDLACtx->getInputTensorSizeWithIndex(0)));
         }
 #ifdef USE_DLA_STANDALONE_MODE
         input_buf    = mCuDLACtx->getInputCudaBufferPtr(0);
@@ -239,6 +236,7 @@ void yoloxp::preProcess4Validate(std::vector<cv::Mat> &cv_img)
     const float input_width = static_cast<float>(input_dims[3]);
     std::vector<cv::Mat> dst_images;
     scales_.clear();
+    input_h_.clear();
 
     for (const auto & image : cv_img) {
         cv::Mat dst_image;
@@ -255,7 +253,7 @@ void yoloxp::preProcess4Validate(std::vector<cv::Mat> &cv_img)
         copyMakeBorder(
         dst_image, dst_image, 0, bottom, 0, right, cv::BORDER_CONSTANT, {114, 114, 114});
         dst_images.emplace_back(dst_image);
-        cv::imwrite("tmp_img.jpg", dst_image);
+        // cv::imwrite("tmp_img.jpg", dst_image);
     }
 
     const auto chw_images = cv::dnn::blobFromImages(
@@ -284,7 +282,7 @@ int yoloxp::pushImg(void *imgBuffer, int numImg, bool fromCPU)
 
         float *a = reinterpret_cast<float *>(imgBuffer);
 
-        std::cout << "Half size : "  << dim * sizeof(__half) << std::endl;
+        // std::cout << "Half size : "  << dim * sizeof(__half) << std::endl;
         // std::cout << "Half size(each) : "  << sizeof(__half) << std::endl;
         // std::cout << "float size : "  << dim * sizeof(float) << std::endl;
 
@@ -310,6 +308,8 @@ int yoloxp::pushImg(void *imgBuffer, int numImg, bool fromCPU)
 
 int yoloxp::infer()
 {
+    output_h_.clear();
+    output_h_ = std::vector<float>(output_dims_reshape[0]*output_dims_reshape[1]*output_dims_reshape[2]);
     if (mImgPushed == 0)
     {
         std::cerr << " error: mImgPushed = " << mImgPushed << "  ,mImgPushed == 0!" << std::endl;
@@ -321,7 +321,9 @@ int yoloxp::infer()
 
     if (mBackend == YoloxpBackend::CUDLA_FP16 || mBackend == YoloxpBackend::CUDLA_INT8)
     {
+        checkCudaErrors(cudaDeviceSynchronize());
         mCuDLACtx->submitDLATask(mStream);
+        checkCudaErrors(cudaDeviceSynchronize());
     }
 
 #ifndef USE_DLA_STANDALONE_MODE
@@ -366,7 +368,7 @@ int yoloxp::infer()
         std::vector<float> output_tmp(output_h_.size());
         if(concat(fp_0, fp_1, fp_2, output_dims_0, output_dims_1, output_dims_2, output_tmp))
         {
-            std::cout << "concat ok" << std::endl;
+            // std::cout << "concat ok" << std::endl;
         }
 
         std::vector<int> dim_reshape{output_dims_reshape[2], output_dims_reshape[1]}; // (13, 18900)

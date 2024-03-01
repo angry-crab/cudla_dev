@@ -80,18 +80,10 @@ cudla_yoloxp: $(NVCCOBJS) $(CXXOBJS) | $(BUILD_DIR)
 	$(CXX) $(ALL_CCFLAGS) $(INCLUDES) $(ALL_LDFLAGS) -o $(BUILD_DIR)/$@ $+ $(LIBRARIES)
 
 run_fp16: cudla_yoloxp
-	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.fp16.fp16chwin.fp16chwout.standalone.bin --image ./data/images/image.jpg --backend cudla_fp16
+	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.fp16.fp16chwin.fp16chwout.standalone.bin --image /home/autoware/develop/cudla_dev/data/evaluation_dataset_v1/JPEGImages --backend cudla_fp16
 
 run_int8: cudla_yoloxp
-	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.int8.int8hwc4in.fp16chw16out.standalone.bin --image ./data/images/image.jpg --backend cudla_int8
-
-validate_cudla_fp16: cudla_yoloxp
-	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.fp16.fp16chw16in.fp16chw16out.standalone.bin --coco_path ./data/coco/ --backend cudla_fp16
-	python3 test_coco_map.py --predict predict.json --coco ./data/coco/
-
-validate_cudla_int8: cudla_yoloxp
-	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.int8.int8hwc4in.fp16chw16out.standalone.bin --coco_path ./data/coco/ --backend cudla_int8
-	python3 test_coco_map.py --predict predict.json --coco ./data/coco/
+	./$(BUILD_DIR)/cudla_yoloxp --engine ./data/loadable/yoloxp.int8.int8hwc4in.fp16chw16out.standalone.bin --image ./data/images --backend cudla_int8
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
