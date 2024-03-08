@@ -39,3 +39,14 @@ ONNX file is modified from `yolox-sPlus-T4-960x960-pseudo-finetune.onnx` by remo
 `bash data/model/build_dla_standalone.sh`
 
 `make run_fp16`
+
+
+# Reference
+
+
+https://github.com/NVIDIA-AI-IOT/cuDLA-samples
+
+
+https://github.com/tier4/trt-yoloXP/tree/main
+
+

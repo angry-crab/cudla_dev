@@ -196,28 +196,33 @@ class yoloxp
     cuDLAContextHybrid *mCuDLACtx;
 #endif
 
-    // float mInputScale   = 0.00787209;
+    // Output : 2 for fp16, 1 for in8
+    int mByte = 2;
+
+    // mInputScale is obtained from calibration file
+    float mInputScale   = 2.00787;
+    
     // float mOutputScale1 = 0.0546086;
     // float mOutputScale2 = 0.148725;
     // float mOutputScale3 = 0.0546086;
-    void * mInputTemp1;
-    void * mInputTemp2;
+    // void * mInputTemp1;
+    // void * mInputTemp2;
 
     // chw16 -> chw -> reshape -> transpose operation for yoloxp heads.
     // also support chw -> chw16 for yoloxp inputs
     // ReformatRunner *    mReformatRunner;
 
-    std::vector<void *> src;
+    // std::vector<void *> src;
     // std::vector<void *> dst{3};
 
     // For post-processing
-    float *                         mAffineMatrix;
-    float *                         prior_ptr_dev;
-    float *                         parray_host;
-    float *                         parray;
-    uint64_t                        parray_size;
-    std::vector<std::vector<float>> det_results;
-    BoxArray                        bas;
+    // float *                         mAffineMatrix;
+    // float *                         prior_ptr_dev;
+    // float *                         parray_host;
+    // float *                         parray;
+    // uint64_t                        parray_size;
+    // std::vector<std::vector<float>> det_results;
+    // BoxArray                        bas;
 };
 
 #endif

@@ -1,6 +1,7 @@
 #include "yoloxp.h"
 #include <cuda_runtime.h>
 #include <iostream>
+#include <stdint.h>
 
 // static void hwc_to_chw(cv::InputArray src, cv::OutputArray dst)
 // {
@@ -26,6 +27,16 @@ static void convert_half_to_float(__half * a, float * b, int size) {
     for(int i=0; i<size; ++i)
     {
         b[i] = __half2float(a[i]);
+    }
+}
+
+static void convert_float_to_int8(const float* a, int8_t* b, int size, float scale) {
+    for(int idx=0; idx<size; ++idx)
+    {
+        float v = (a[idx] / scale);
+        if(v < -128) v = -128;
+        if(v > 127) v = 127;
+        b[idx] = (int8_t)v;
     }
 }
 
@@ -72,17 +83,18 @@ static void transpose2d(std::vector<float>& input, std::vector<float>& output, s
     }
 }
 
-std::size_t roundup(std::size_t n)
+std::size_t roundup(std::size_t n, int byte)
 {
-    std::size_t res = ((n+32)/32) * 32;
+    int factor = 64 / byte;
+    std::size_t res = ((n+factor)/factor) * factor;
     return res;
 }
 
-static void reformat(std::vector<float>& input, std::vector<float>& output, std::vector<int>& dim_i)
+static void reformat(std::vector<float>& input, std::vector<float>& output, std::vector<int>& dim_i, int byte)
 {
-    std::size_t step_i = roundup(dim_i.back());
+    std::size_t step_i = roundup(dim_i.back(), byte);
     std::size_t step_o = static_cast<std::size_t>(dim_i.back());
-    std::cout << "step_i : " << step_i << std::endl;
+    // std::cout << "step_i : " << step_i << std::endl;
     for(std::size_t pi=0, po=0; pi<input.size(); pi+=step_i, po+=step_o)
     {
         std::memcpy((void*)&output[po], (void*)&input[pi], dim_i.back()*sizeof(float));
@@ -176,11 +188,13 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
         // checkCudaErrors(cudaMalloc(&mInputTemp1, 1 * 3 * 960 * 960 * sizeof(__half)));
         if (mBackend == YoloxpBackend::CUDLA_FP16)
         {
+            // mByte = 2;
             // Same size as cuDLA input
             // checkCudaErrors(cudaMalloc(&mInputTemp2, mCuDLACtx->getInputTensorSizeWithIndex(0)));
         }
         if (mBackend == YoloxpBackend::CUDLA_INT8)
         {
+            // mByte = 1;
             // For int8, we need to do reformat on FP32, then cast to INT8, so we need 4x space.
             // checkCudaErrors(cudaMalloc(&mInputTemp2, 4 * mCuDLACtx->getInputTensorSizeWithIndex(0)));
         }
@@ -207,7 +221,7 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
     mBindingArray.push_back(output_buf_1);
     mBindingArray.push_back(output_buf_2);
 
-    src = {mBindingArray[1], mBindingArray[2], mBindingArray[3]};
+    // src = {mBindingArray[1], mBindingArray[2], mBindingArray[3]};
     
     // cudaMalloc((void **)&dst[0], sizeof(half) * 3 * 85 * 9261);
     // dst[1] = reinterpret_cast<half *>(dst[0]) + 3 * 85 * 7056;
@@ -215,7 +229,7 @@ yoloxp::yoloxp(std::string engine_path, YoloxpBackend backend)
 
     // mReformatRunner = new ReformatRunner();
 
-    checkCudaErrors(cudaMalloc(&mAffineMatrix, 3 * sizeof(float)));
+    // checkCudaErrors(cudaMalloc(&mAffineMatrix, 3 * sizeof(float)));
 
     checkCudaErrors(cudaEventCreateWithFlags(&mStartEvent, cudaEventBlockingSync));
     checkCudaErrors(cudaEventCreateWithFlags(&mEndEvent, cudaEventBlockingSync));
@@ -247,7 +261,7 @@ void yoloxp::preProcess4Validate(std::vector<cv::Mat> &cv_img)
 
         scales_.emplace_back(scale);
         const auto scale_size = cv::Size(image.cols * scale, image.rows * scale);
-        cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_BILINEAR);
+        cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_LINEAR);
         const auto bottom = input_height - dst_image.rows;
         const auto right = input_width - dst_image.cols;
         copyMakeBorder(
@@ -277,15 +291,6 @@ int yoloxp::pushImg(void *imgBuffer, int numImg, bool fromCPU)
     {
         std::vector<__half> tmp_fp(dim);
         convert_float_to_half((float *)imgBuffer, tmp_fp.data(), dim);
-        // std::vector<float> input(dim, 1.0);
-        // convert_float_to_half((float *)input.data(), tmp_fp.data(), dim);
-
-        float *a = reinterpret_cast<float *>(imgBuffer);
-
-        // std::cout << "Half size : "  << dim * sizeof(__half) << std::endl;
-        // std::cout << "Half size(each) : "  << sizeof(__half) << std::endl;
-        // std::cout << "float size : "  << dim * sizeof(float) << std::endl;
-
         checkCudaErrors(cudaMemcpy(mCuDLACtx->getInputCudaBufferPtr(0), (void *)tmp_fp.data(), dim * sizeof(__half), cudaMemcpyHostToDevice));
 
         // convert_float_to_half((float *)mInputTemp1, (__half *)mInputTemp2, 1 * 3 * 960 * 960);
@@ -294,6 +299,9 @@ int yoloxp::pushImg(void *imgBuffer, int numImg, bool fromCPU)
     }
     if (mBackend == YoloxpBackend::CUDLA_INT8)
     {
+        std::vector<int8_t> tmp_int(dim);
+        convert_float_to_int8((float *)imgBuffer, tmp_int.data(), dim, mInputScale);
+        checkCudaErrors(cudaMemcpy(mCuDLACtx->getInputCudaBufferPtr(0), (void *)tmp_int.data(), dim * sizeof(int8_t), cudaMemcpyHostToDevice));
         // checkCudaErrors(cudaMemcpy(mInputTemp1, imgBuffer, dim * sizeof(float), cudaMemcpyHostToDevice));
         // std::vector<void *> vec_temp_1{mInputTemp1};
         // std::vector<void *> vec_temp_2{mInputTemp2};
@@ -333,54 +341,55 @@ int yoloxp::infer()
     std::cout << "Inference time: " << ms << " ms" << std::endl;
 #endif
 
-    if (mBackend == YoloxpBackend::CUDLA_FP16)
+    // if (mBackend == YoloxpBackend::CUDLA_FP16)
+    // {
+    //     // mReformatRunner->Run(src.data(), dst.data(), mStream);
+    // }
+    // if (mBackend == YoloxpBackend::CUDLA_INT8)
+    // {
+    //     // Use fp16:chw16 output here
+    //     // mReformatRunner->Run(src.data(), dst.data(), mStream);
+    // }
+
+    // iff output format is fp16
+    int dim3_0 = output_dims_0[0] * output_dims_0[1] * output_dims_0[2];
+    int r_0 = roundup(output_dims_0[3], mByte);
+    std::vector<float> fp_0_float(dim3_0 * r_0);
+    copyHalf2Float(fp_0_float, 0);
+    std::vector<float> fp_0(dim3_0 * output_dims_0[3], 0);
+    reformat(fp_0_float, fp_0, output_dims_0, mByte);
+
+    // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(0), 25, dim_0, mStream);
+    // checkCudaErrors(cudaStreamSynchronize(mStream));
+
+    int dim3_1 = output_dims_1[0] * output_dims_1[1] * output_dims_1[2];
+    int r_1 = roundup(output_dims_1[3], mByte);
+    std::vector<float> fp_1_float(dim3_1 * r_1);
+    copyHalf2Float(fp_1_float, 1);
+    std::vector<float> fp_1(dim3_1 * output_dims_1[3], 0);
+    reformat(fp_1_float, fp_1, output_dims_1, mByte);
+
+    // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(1), 20, dim_0, mStream);
+    // checkCudaErrors(cudaStreamSynchronize(mStream));
+    
+    int dim3_2 = output_dims_2[0] * output_dims_2[1] * output_dims_2[2];
+    int r_2 = roundup(output_dims_2[3], mByte);
+    std::vector<float> fp_2_float(dim3_2 * r_2);
+    copyHalf2Float(fp_2_float, 2);
+    std::vector<float> fp_2(dim3_2 * output_dims_2[3], 0);
+    reformat(fp_2_float, fp_2, output_dims_2, mByte);
+
+    // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(2), 20, dim_0, mStream);
+    // checkCudaErrors(cudaStreamSynchronize(mStream));
+
+    std::vector<float> output_tmp(output_h_.size());
+    if(concat(fp_0, fp_1, fp_2, output_dims_0, output_dims_1, output_dims_2, output_tmp))
     {
-        int dim3_0 = output_dims_0[0] * output_dims_0[1] * output_dims_0[2];
-        int r_0 = roundup(output_dims_0[3]);
-        std::vector<float> fp_0_float(dim3_0 * r_0);
-        copyHalf2Float(fp_0_float, 0);
-        std::vector<float> fp_0(dim3_0 * output_dims_0[3], 0);
-        reformat(fp_0_float, fp_0, output_dims_0);
-
-        // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(0), 25, dim_0, mStream);
-        // checkCudaErrors(cudaStreamSynchronize(mStream));
-
-        int dim3_1 = output_dims_1[0] * output_dims_1[1] * output_dims_1[2];
-        int r_1 = roundup(output_dims_1[3]);
-        std::vector<float> fp_1_float(dim3_1 * r_1);
-        copyHalf2Float(fp_1_float, 1);
-        std::vector<float> fp_1(dim3_1 * output_dims_1[3], 0);
-        reformat(fp_1_float, fp_1, output_dims_1);
-
-        // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(1), 20, dim_0, mStream);
-        // checkCudaErrors(cudaStreamSynchronize(mStream));
-        
-        int dim3_2 = output_dims_2[0] * output_dims_2[1] * output_dims_2[2];
-        int r_2 = roundup(output_dims_2[3]);
-        std::vector<float> fp_2_float(dim3_2 * r_2);
-        copyHalf2Float(fp_2_float, 2);
-        std::vector<float> fp_2(dim3_2 * output_dims_2[3], 0);
-        reformat(fp_2_float, fp_2, output_dims_2);
-
-        // print_dla_addr((half *)mCuDLACtx->getOutputCudaBufferPtr(2), 20, dim_0, mStream);
-        // checkCudaErrors(cudaStreamSynchronize(mStream));
-
-        std::vector<float> output_tmp(output_h_.size());
-        if(concat(fp_0, fp_1, fp_2, output_dims_0, output_dims_1, output_dims_2, output_tmp))
-        {
-            // std::cout << "concat ok" << std::endl;
-        }
-
-        std::vector<int> dim_reshape{output_dims_reshape[2], output_dims_reshape[1]}; // (13, 18900)
-        transpose2d(output_tmp, output_h_, dim_reshape);
-        
-        // mReformatRunner->Run(src.data(), dst.data(), mStream);
+        // std::cout << "concat ok" << std::endl;
     }
-    if (mBackend == YoloxpBackend::CUDLA_INT8)
-    {
-        // Use fp16:chw16 output here
-        // mReformatRunner->Run(src.data(), dst.data(), mStream);
-    }
+
+    std::vector<int> dim_reshape{output_dims_reshape[2], output_dims_reshape[1]}; // (13, 18900)
+    transpose2d(output_tmp, output_h_, dim_reshape);
 
     checkCudaErrors(cudaStreamSynchronize(mStream));
     mImgPushed = 0;

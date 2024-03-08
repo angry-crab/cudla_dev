@@ -20,9 +20,9 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-echo "Build YoloXP DLA loadable for fp16"
+echo "Build YoloXP DLA loadable for fp16 and int8"
 mkdir -p data/loadable
 TRTEXEC=/usr/src/tensorrt/bin/trtexec
 ${TRTEXEC} --onnx=data/model/modified_yolox-sPlus-T4-960x960-pseudo-finetune.onnx --fp16 --useDLACore=0 --buildDLAStandalone --saveEngine=data/loadable/yoloxp.fp16.fp16chwin.fp16chwout.standalone.bin  --inputIOFormats=fp16:dla_linear --outputIOFormats=fp16:dla_linear
-
-
+${TRTEXEC} --onnx=data/model/modified_yolox-sPlus-T4-960x960-pseudo-finetune.onnx --useDLACore=0 --buildDLAStandalone --saveEngine=data/loadable/yoloxp.int8.int8chwin.fp16chwout.standalone.bin  --inputIOFormats=int8:dla_linear --outputIOFormats=fp16:dla_linear --int8 --fp16 --calib=data/model/yoloXP.cache --precisionConstraints=obey --layerPrecisions="/head/Concat_2":fp16,"/head/Concat_1":fp16,"/head/Concat":fp16
+# "/head/reg_preds.2/Conv":fp16,"/head/Sigmoid_4":fp16,"/head/Sigmoid_5":fp16,"/head/reg_preds.1/Conv":fp16,"/head/Sigmoid_2":fp16,"/head/Sigmoid_3":fp16,"/head/reg_preds.0/Conv":fp16,"/head/Sigmoid":fp16,"/head/Sigmoid_1":fp16,

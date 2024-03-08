@@ -159,19 +159,6 @@ int main(int argc, char **argv)
             results = yoloxp_infer.postProcess4Validation();
             printf("Num object detect: %ld\n", results.size());
 
-            // cv::Mat dst_image;
-            // const float input_height = 960.0;
-            // const float input_width = 960.0;
-            // const float scale = std::min(input_width / image.cols, input_height / image.rows);
-
-            // const auto scale_size = cv::Size(image.cols * scale, image.rows * scale);
-            // cv::resize(image, dst_image, scale_size, 0, 0, cv::INTER_CUBIC);
-            // const auto bottom = input_height - dst_image.rows;
-            // const auto right = input_width - dst_image.cols;
-            // copyMakeBorder(
-            // dst_image, dst_image, 0, bottom, 0, right, cv::BORDER_CONSTANT, {114, 114, 114});
-
-
             for (auto &item : results)
             {
                 // printf("score: %lf,  left: %lf , top: %lf , right: %lf , bottom: %lf\n", item[5], item[0], item[1], item[2], item[3]);
