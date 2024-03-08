@@ -1,7 +1,10 @@
 # cuDLA YoloX
 
 
-FP16 dla_linear OK
+FP16  dla_linear  :heavy_check_mark:
+
+
+INT8  dla_linear  :heavy_check_mark:
 
 
 # Env
