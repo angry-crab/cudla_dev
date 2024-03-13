@@ -8,7 +8,7 @@ int main()
     {
         a[i] = 2.0;
     }
-    Tensor<float> A(dim_a, a);
+    Tensor<float, 2> A(dim_a, a);
 
     return 0;
 }

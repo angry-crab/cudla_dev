@@ -130,7 +130,7 @@ class yoloxp
     //!
     //! \return return all the nms result of yoloxp
     //!
-    std::vector<std::vector<float>> postProcess4Validation();
+    std::vector<std::vector<float>> postProcess4Validation(int img_w, int img_h);
 
   private:
     int pushImg(void *imgBuffer, int numImg, bool fromCPU = true);
@@ -164,6 +164,8 @@ class yoloxp
     float score_threshold_ = 0.3;
     float nms_threshold_ = 0.7;
     int num_class_ = 8;
+    int img_width;
+    int img_height;
 
     std::vector<float> scales_;
 
@@ -181,6 +183,8 @@ class yoloxp
 
     std::vector<float> input_h_;
     std::vector<float> output_h_;
+
+    std::vector<int> time_;
 
     cudaStream_t mStream;
     float        ms{0.0f};
