@@ -145,7 +145,7 @@ int main(int argc, char **argv)
 
     if (!image_path.empty())
     {
-        std::string target_path("/home/autoware/develop/cudla_dev/data/evaluation");
+        std::string target_path("/home/autoware/develop/cudla_dev/data/detection-results");
         std::filesystem::create_directory(target_path);
         for (const auto & entry : std::filesystem::directory_iterator(image_path))
         {
@@ -156,7 +156,7 @@ int main(int argc, char **argv)
             yoloxp_infer.preProcess4Validate(bgr_imgs);
 
             yoloxp_infer.infer();
-            results = yoloxp_infer.postProcess4Validation();
+            results = yoloxp_infer.postProcess4Validation(image.cols, image.rows);
             printf("Num object detect: %ld\n", results.size());
 
             for (auto &item : results)
@@ -166,7 +166,7 @@ int main(int argc, char **argv)
                 cv::rectangle(image, cv::Point(item[0], item[1]), cv::Point(item[2], item[3]), cv::Scalar(0, 255, 0), 2,
                             16);
             }
-            printf("detect result has been write to result.jpg\n");
+            // printf("detect result has been write to result.jpg\n");
             std::string filename = getFilename(file);
             cv::imwrite("/home/autoware/develop/cudla_dev/data/results/" + filename + ".jpg", image);
 

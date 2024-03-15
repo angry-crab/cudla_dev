@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 #include <iostream>
 #include <stdint.h>
+#include <chrono>
 
 // static void hwc_to_chw(cv::InputArray src, cv::OutputArray dst)
 // {
@@ -240,6 +241,8 @@ yoloxp::~yoloxp()
 {
     delete mCuDLACtx;
     mCuDLACtx = nullptr;
+    float sum = std::accumulate(time_.begin(), time_.end(), 0);
+    std::cout << "avg infer time : " << sum/time_.size() << std::endl;
 }
 
 void yoloxp::preProcess4Validate(std::vector<cv::Mat> &cv_img)
@@ -330,8 +333,14 @@ int yoloxp::infer()
     if (mBackend == YoloxpBackend::CUDLA_FP16 || mBackend == YoloxpBackend::CUDLA_INT8)
     {
         checkCudaErrors(cudaDeviceSynchronize());
+
+        auto start = std::chrono::high_resolution_clock::now();
         mCuDLACtx->submitDLATask(mStream);
         checkCudaErrors(cudaDeviceSynchronize());
+        auto elapsed = std::chrono::high_resolution_clock::now() - start;
+        int milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+        elapsed).count();
+        time_.push_back(milliseconds);
     }
 
 #ifndef USE_DLA_STANDALONE_MODE
@@ -396,8 +405,10 @@ int yoloxp::infer()
     return 0;
 }
 
-std::vector<std::vector<float>> yoloxp::postProcess4Validation()
+std::vector<std::vector<float>> yoloxp::postProcess4Validation(int img_w, int img_h)
 {
+    img_height = img_h;
+    img_width = img_w;
     std::vector<std::vector<float>> res;
     ObjectArray object_array;
     decodeOutputs((float *)output_h_.data(), object_array, scales_[0]);
@@ -406,8 +417,8 @@ std::vector<std::vector<float>> yoloxp::postProcess4Validation()
     {
         const auto left = object.x_offset;
         const auto top = object.y_offset;
-        const auto right = std::clamp(left + object.width, 0, input_dims[2]);
-        const auto bottom = std::clamp(top + object.height, 0, input_dims[3]);
+        const auto right = std::clamp(left + object.width, 0, img_width);
+        const auto bottom = std::clamp(top + object.height, 0, img_height);
         res.push_back(std::vector<float>{left, top, right, bottom, object.type, object.score});
     }
     return res;
@@ -426,8 +437,6 @@ void yoloxp::decodeOutputs(
     float * prob, ObjectArray & objects, float scale) const
 {
     ObjectArray proposals;
-    int img_height = input_dims[2];
-    int img_width = input_dims[3];
     const float input_height = static_cast<float>(input_dims[2]);
     const float input_width = static_cast<float>(input_dims[3]);
     std::vector<GridAndStride> grid_strides;
