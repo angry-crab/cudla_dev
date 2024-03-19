@@ -80,9 +80,8 @@ std::string getFilename(std::string& file_path)
     return name;
 }
 
-void saveBoxPred(std::vector<std::vector<float>>& boxes, std::string path, std::string target_path)
+void saveBoxPred(std::vector<std::string>& map2class, std::vector<std::vector<float>>& boxes, std::string path, std::string target_path)
 {
-    std::vector<std::string> map2class{"UNKNOWN", "CAR", "TRUCK", "BUS", "BICYCLE", "MOTORBIKE", "PEDESTRIAN", "ANIMAL"};
     std::string file_path = path;
     // std::cout << "get file: " << filename << std::endl;
     std::string body = getFilename(file_path);
@@ -132,6 +131,10 @@ int main(int argc, char **argv)
     std::string coco_path   = input.getCmdOption("--coco_path");
     std::string image_path  = input.getCmdOption("--image");
 
+    std::vector<std::vector<int>> color_map{{255,255,255}, {0,0,255}, {0,160,165}, {100,0,200},
+                                        {128,255,0}, {255,255,0}, {255,0,32}, {255,0,0}};
+    std::vector<std::string> map2class{"UNKNOWN", "CAR", "TRUCK", "BUS", "BICYCLE", "MOTORBIKE", "PEDESTRIAN", "ANIMAL"};
+
     YoloxpBackend backend = YoloxpBackend::CUDLA_FP16;
     if (backend_str == "cudla_int8")
     {
@@ -161,16 +164,20 @@ int main(int argc, char **argv)
 
             for (auto &item : results)
             {
+                char buff[128];
+                std::vector<int> rgb = color_map[item[4]];
+                sprintf(buff, "%s %2.0f%%", map2class[item[4]].c_str(), item[5] * 100);
                 // printf("score: %lf,  left: %lf , top: %lf , right: %lf , bottom: %lf\n", item[5], item[0], item[1], item[2], item[3]);
                 // left, top, right, bottom, label, confident
-                cv::rectangle(image, cv::Point(item[0], item[1]), cv::Point(item[2], item[3]), cv::Scalar(0, 255, 0), 2,
+                cv::rectangle(image, cv::Point(item[0], item[1]), cv::Point(item[2], item[3]), cv::Scalar(rgb[2], rgb[1], rgb[0]), 2,
                             16);
+                cv::putText(image, buff, cv::Point(item[0], item[1]), 0, 1, cv::Scalar(rgb[2], rgb[1], rgb[0]), 2);
             }
             // printf("detect result has been write to result.jpg\n");
             std::string filename = getFilename(file);
             cv::imwrite("/home/autoware/develop/cudla_dev/data/results/" + filename + ".jpg", image);
 
-            saveBoxPred(results, file, target_path);
+            saveBoxPred(map2class, results, file, target_path);
             bgr_imgs.clear();
             results.clear();
         }
